@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>현장조사 GIS Mobile App - Full Features</title>
+    <link rel="manifest" href="/manifest.json">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+
+    <style>
+        /* --- 기본 스타일 --- */
+        body, html { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        .fab-container { position: fixed; bottom: 30px; right: 20px; z-index: 1000; }
+        .fab-button { width: 60px; height: 60px; background-color: #007bff; border-radius: 50%; box-shadow: 0 4px 8px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; color: white; font-size: 30px; cursor: pointer; border: none; outline: none; -webkit-tap-highlight-color: transparent; }
+        .fab-button:active { background-color: #0056b3; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.9); padding: 20px; border-radius: 10px; z-index: 2000; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+
+        /* --- 모달(Modal) 스타일 --- */
+        .modal { display: none; position: fixed; z-index: 3000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); overflow: auto; }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 85%; max-width: 500px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-control { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+        .btn-save { background-color: #28a745; color: white; }
+        .btn-cancel { background-color: #dc3545; color: white; }
+
+        /* --- 팝업 내 삭제 버튼 스타일 --- */
+        .delete-btn { background-color: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; font-size: 0.9em; display: block; width: 100%; box-sizing: border-box; }
+        .delete-btn:hover { background-color: #c82333; }
+
+        /* --- 지도 상호작용 UI 스타일 --- */
+        .leaflet-control-locate { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; background-color: white; border-radius: 5px; box-shadow: 0 1px 5px rgba(0,0,0,0.4); cursor: pointer; display: flex; justify-content: center; align-items: center; z-index: 800; }
+        .leaflet-control-locate::before { content: '📍'; font-size: 1.2em; }
+
+        #crosshair { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; border: 1px solid #000; border-width: 0 1px 1px 0; border-color: red; pointer-events: none; z-index: 1500; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background-color: red; }
+        #crosshair::before { width: 100%; height: 1px; top: 50%; left: 0; transform: translateY(-50%); }
+        #crosshair::after { width: 1px; height: 100%; top: 0; left: 50%; transform: translateX(-50%); }
+
+        #currentMapCenterCoords { font-size: 0.9em; color: #333; margin-top: 5px; text-align: center; }
+
+        /* --- 필터링/검색 UI 스타일 --- */
+        #filterContainer {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #filterInput {
+            border: 1px solid #ccc;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 1em;
+            width: 150px; /* 적당한 너비 */
+        }
+        #filterButton {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        /* --- 내보내기/가져오기 UI 스타일 --- */
+        #dataControls {
+            position: fixed;
+            bottom: 30px;
+            left: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column; /* 세로로 정렬 */
+            gap: 8px;
+            align-items: flex-start; /* 왼쪽 정렬 */
+        }
+        #dataControls button {
+            background-color: #6c757d; /* 회색 계열 */
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%; /* 너비 맞춤 */
+            text-align: left;
+        }
+        #dataControls button:hover {
+            background-color: #5a6268;
+        }
+        #importFileInput {
+            display: none; /* 실제 파일 입력은 숨기고 버튼으로 트리거 */
+        }
+        /* 사진 미리보기 팝업 스타일 */
+        .leaflet-popup-content img {
+            max-width: 200px; /* 팝업 내 이미지 최대 너비 */
+            height: auto;
+            display: block;
+            margin: 10px auto 0; /* 중앙 정렬, 상단 여백 */
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <div id="crosshair"></div>
+
+    <div id="loading">
+        앱 로딩 중...<br>
+        <small>(오프라인 캐싱, 위치 권한 등)</small>
+    </div>
+
+    <div id="filterContainer">
+        <input type="text" id="filterInput" placeholder="조사 내용 검색">
+        <button id="filterButton">검색</button>
+    </div>
+
+    <div id="dataControls">
+        <button id="exportCsvButton">CSV 내보내기</button>
+        <button id="exportGeoJsonButton">GeoJSON 내보내기</button>
+        <input type="file" id="importFileInput" accept=".csv,.geojson,.json">
+        <button id="importFileButton">데이터 가져오기</button>
+    </div>
+
+    <div class="fab-container">
+        <button class="fab-button" onclick="startSurvey()">+</button>
+    </div>
+
+    <div id="surveyModal" class="modal">
+        <div class="modal-content">
+            <h3>새로운 지점 조사</h3>
+            <form id="surveyForm">
+                <input type="hidden" id="latInput" name="latitude">
+                <input type="hidden" id="lngInput" name="longitude">
+                
+                <p id="currentMapCenterCoords">위도: - / 경도: -</p>
+
+                <div class="form-group">
+                    <label for="surveyNote">조사 내용 / 특이사항</label>
+                    <textarea id="surveyNote" name="note" class="form-control" rows="3" placeholder="내용을 입력하세요"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="surveyPhoto">현장 사진 첨부</label>
+                    <input type="file" id="surveyPhoto" name="photo" class="form-control" accept="image/*">
+                    <p id="photoFileName" style="font-size: 0.8em; color: #555; margin-top: 5px;"></p>
+                </div>
+                
+                <p style="font-size: 0.9em; color: #666;">* 지도의 중앙 지점이 저장됩니다.</p>
+
+                <div class="btn-group">
+                    <button type="button" class="btn btn-cancel" onclick="closeModal()">취소</button>
+                    <button type="submit" class="btn btn-save">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+
+    <script>
+        // --- PWA Service Worker 등록 ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                    });
+            });
+        }
+
+        // --- 지도 초기화 및 기본 설정 ---
+        const map = L.map('map', { zoomControl: false }).setView([37.5665, 126.9780], 13);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+
+        let currentLocationMarker;
+        const loadingElement = document.getElementById('loading');
+        const storedMarkers = new Map(); // key: data.id, value: L.Marker object
+
+        // --- 마커 아이콘 정의 ---
+        const redIcon = new L.Icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
+        const blueIcon = new L.Icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png', shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
+        const greenIcon = new L.Icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
+
+        // --- 현재 위치 추적 및 에러 핸들링 ---
+        function onLocationFound(e) {
+            const radius = e.accuracy / 2;
+            loadingElement.style.display = 'none';
+            if (currentLocationMarker) { map.removeLayer(currentLocationMarker); }
+            currentLocationMarker = L.marker(e.latlng, {icon: blueIcon}).addTo(map).bindPopup("현재 위치 (정확도: 반경 " + Math.round(radius) + "m)");
+            L.circle(e.latlng, radius).addTo(map);
+            map.flyTo(e.latlng, 16);
+            renderExistingSurveyPoints();
+        }
+
+        function onLocationError(e) {
+            loadingElement.style.display = 'none';
+            alert("현재 위치를 찾을 수 없습니다.\n(위치 서비스가 켜져 있는지, 브라우저 권한이 허용되었는지 확인해주세요.)\n기본 위치로 이동합니다.");
+            map.setView([37.5665, 126.9780], 13);
+            renderExistingSurveyPoints();
+        }
+
+        map.on('locationfound', onLocationFound);
+        map.on('locationerror', onLocationError);
+        map.locate({setView: true, maxZoom: 16, enableHighAccuracy: true});
+
+        // --- '내 위치' 버튼 컨트롤 ---
+        const locateControl = L.control({position: 'topright'});
+        locateControl.onAdd = function(map) {
+            const div = L.DomUtil.create('div', 'leaflet-control-locate');
+            div.innerHTML = '';
+            div.title = '현재 위치로 이동';
+            L.DomEvent.on(div, 'click', L.DomEvent.stop)
+                     .on(div, 'click', function() {
+                         map.locate({setView: true, maxZoom: 16, enableHighAccuracy: true});
+                         alert('현재 위치를 찾는 중입니다...');
+                     });
+            return div;
+        };
+        locateControl.addTo(map);
+
+        // --- 모달 및 데이터 입력/저장 로직 ---
+        const modal = document.getElementById('surveyModal');
+        const surveyForm = document.getElementById('surveyForm');
+        let tempSurveyMarker;
+        const crosshair = document.getElementById('crosshair');
+        const currentMapCenterCoords = document.getElementById('currentMapCenterCoords');
+
+        document.getElementById('surveyPhoto').addEventListener('change', function() {
+            const fileName = this.files.length > 0 ? this.files[0].name : '';
+            document.getElementById('photoFileName').textContent = fileName ? `선택된 파일: ${fileName}` : '';
+        });
+
+        function startSurvey() {
+            crosshair.style.display = 'block';
+            map.on('move', updateMapCenterCoords);
+            updateMapCenterCoords(); // 초기 좌표 설정
+            modal.style.display = 'block';
+            document.getElementById('photoFileName').textContent = '';
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            surveyForm.reset();
+            if (tempSurveyMarker) {
+                map.removeLayer(tempSurveyMarker);
+                tempSurveyMarker = null;
+            }
+            crosshair.style.display = 'none';
+            map.off('move', updateMapCenterCoords);
+        }
+
+        function updateMapCenterCoords() {
+            const center = map.getCenter();
+            currentMapCenterCoords.textContent = `위도: ${center.lat.toFixed(5)} / 경도: ${center.lng.toFixed(5)}`;
+            document.getElementById('latInput').value = center.lat;
+            document.getElementById('lngInput').value = center.lng;
+        }
+
+        surveyForm.addEventListener('submit', async function(e) { // async 추가
+            e.preventDefault(); 
+
+            const lat = document.getElementById('latInput').value;
+            const lng = document.getElementById('lngInput').value;
+            const note = document.getElementById('surveyNote').value;
+            const photoFile = document.getElementById('surveyPhoto').files[0];
+            const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+            let photoBase64 = null;
+            if (photoFile) {
+                // 사진 파일 Base64 인코딩 (비동기)
+                loadingElement.textContent = "사진 처리 중...";
+                loadingElement.style.display = 'block';
+                photoBase64 = await convertFileToBase64(photoFile);
+                loadingElement.style.display = 'none';
+            }
+
+            const surveyData = {
+                id: Date.now(),
+                latitude: parseFloat(lat),
+                longitude: parseFloat(lng),
+                note: note,
+                photoName: photoFile ? photoFile.name : null,
+                photoBase64: photoBase64, // Base64 데이터 저장
+                timestamp: timestamp
+            };
+
+            // 백엔드 시뮬레이션: 데이터 저장 (네트워크 지연 시뮬레이션)
+            loadingElement.textContent = "데이터 저장 중...";
+            loadingElement.style.display = 'block';
+            await simulateBackendSave(surveyData); // await 추가
+            loadingElement.style.display = 'none';
+
+
+            alert("조사 지점이 저장되었습니다!");
+            closeModal();
+            addSurveyMarkerToMap(surveyData);
+        });
+
+        // --- 로컬 스토리지 및 마커 관리 함수 ---
+        const LOCAL_STORAGE_KEY = 'fieldSurveyPoints';
+
+        function loadAllSurveyData() {
+            const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveAllSurveyData(allData) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allData));
+        }
+
+        // 백엔드 저장 시뮬레이션
+        async function simulateBackendSave(newData) {
+            return new Promise(resolve => {
+                setTimeout(() => { // 1초 지연 시뮬레이션
+                    const allData = loadAllSurveyData();
+                    allData.push(newData);
+                    saveAllSurveyData(allData);
+                    console.log("Simulated backend save:", newData);
+                    resolve();
+                }, 1000);
+            });
+        }
+
+        // 특정 ID의 데이터를 로컬 스토리지에서 삭제하는 함수
+        function deleteSurveyData(idToDelete) {
+            let allData = loadAllSurveyData();
+            const newData = allData.filter(data => data.id !== idToDelete);
+            saveAllSurveyData(newData);
+        }
+
+        function addSurveyMarkerToMap(data) {
+            let photoHtml = '';
+            if (data.photoBase64) {
+                photoHtml = `<img src="${data.photoBase64}" alt="현장 사진">`;
+            }
+            const popupContent = `
+                <b>조사 지점</b><br>
+                위도: ${data.latitude.toFixed(5)}<br>
+                경도: ${data.longitude.toFixed(5)}<br>
+                내용: ${data.note || '없음'}<br>
+                사진: ${data.photoName || '없음'}<br>
+                시간: ${data.timestamp}<br>
+                ${photoHtml}
+                <button class="delete-btn" onclick="deleteSurveyPoint(${data.id})">이 지점 삭제</button>
+            `;
+            const marker = L.marker([data.latitude, data.longitude], {icon: greenIcon}).addTo(map)
+                .bindPopup(popupContent, {maxWidth: 250});
+            
+            storedMarkers.set(data.id, marker);
+        }
+
+        window.deleteSurveyPoint = function(idToDelete) {
+            if (confirm('이 조사 지점을 정말 삭제하시겠습니까?')) {
+                deleteSurveyData(idToDelete);
+                const markerToRemove = storedMarkers.get(idToDelete);
+                if (markerToRemove) {
+                    map.removeLayer(markerToRemove);
+                    storedMarkers.delete(idToDelete);
+                }
+                alert('지점이 삭제되었습니다.');
+            }
+        };
+
+        function renderExistingSurveyPoints(filterText = '') {
+            storedMarkers.forEach(marker => map.removeLayer(marker));
+            storedMarkers.clear();
+
+            const allData = loadAllSurveyData();
+            const filteredData = filterText 
+                ? allData.filter(data => data.note && data.note.toLowerCase().includes(filterText.toLowerCase()))
+                : allData;
+
+            filteredData.forEach(data => {
+                addSurveyMarkerToMap(data);
+            });
+        }
+        
+        // --- 데이터 필터링/검색 ---
+        document.getElementById('filterButton').addEventListener('click', () => {
+            const filterText = document.getElementById('filterInput').value;
+            renderExistingSurveyPoints(filterText);
+        });
+        document.getElementById('filterInput').addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                const filterText = document.getElementById('filterInput').value;
+                renderExistingSurveyPoints(filterText);
+            }
+        });
+
+        // --- 데이터 내보내기/가져오기 ---
+        document.getElementById('exportCsvButton').addEventListener('click', () => {
+            const allData = loadAllSurveyData();
+            if (allData.length === 0) {
+                alert('내보낼 데이터가 없습니다.');
+                return;
+            }
+            const csv = convertToCsv(allData);
+            downloadFile(csv, 'survey_data.csv', 'text/csv');
+        });
+
+        document.getElementById('exportGeoJsonButton').addEventListener('click', () => {
+            const allData = loadAllSurveyData();
+            if (allData.length === 0) {
+                alert('내보낼 데이터가 없습니다.');
+                return;
+            }
+            const geojson = convertToGeoJson(allData);
+            downloadFile(JSON.stringify(geojson, null, 2), 'survey_data.geojson', 'application/json');
+        });
+
+        document.getElementById('importFileButton').addEventListener('click', () => {
+            document.getElementById('importFileInput').click();
+        });
+
+        document.getElementById('importFileInput').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => { // async 추가
+                const content = e.target.result;
+                let importedData = [];
+
+                if (file.name.endsWith('.csv')) {
+                    importedData = parseCsv(content);
+                } else if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
+                    importedData = parseGeoJson(JSON.parse(content));
+                } else {
+                    alert('지원하지 않는 파일 형식입니다. (CSV, GeoJSON, JSON만 가능)');
+                    return;
+                }
+
+                if (importedData.length > 0) {
+                    // 백엔드 시뮬레이션: 데이터 가져와서 병합 (네트워크 지연 시뮬레이션)
+                    loadingElement.textContent = `데이터 ${importedData.length}개 가져오는 중...`;
+                    loadingElement.style.display = 'block';
+                    await simulateBackendImport(importedData); // await 추가
+                    loadingElement.style.display = 'none';
+
+                    alert(`${importedData.length}개의 지점을 성공적으로 가져왔습니다.`);
+                    renderExistingSurveyPoints(); // 지도 다시 그리기
+                } else {
+                    alert('가져올 데이터가 없거나 형식이 올바르지 않습니다.');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = null; // 같은 파일 다시 선택 가능하도록
+        });
+
+        async function simulateBackendImport(importedData) {
+            return new Promise(resolve => {
+                setTimeout(() => { // 1.5초 지연 시뮬레이션
+                    let allData = loadAllSurveyData();
+                    importedData.forEach(item => {
+                        // 중복 방지를 위해 id를 업데이트하거나, 새 id를 부여
+                        item.id = Date.now() + Math.random(); // 새로운 고유 ID 부여
+                        allData.push(item);
+                    });
+                    saveAllSurveyData(allData);
+                    console.log("Simulated backend import and merge:", importedData);
+                    resolve();
+                }, 1500);
+            });
+        }
+
+        // --- 데이터 형식 변환 유틸리티 ---
+        function convertToCsv(data) {
+            const headers = ['id', 'latitude', 'longitude', 'note', 'photoName', 'timestamp'];
+            const rows = data.map(item => headers.map(header => {
+                let value = item[header];
+                if (typeof value === 'string' && value.includes(',')) {
+                    return `"${value.replace(/"/g, '""')}"`; // 콤마 포함 시 따옴표 처리
+                }
+                return value;
+            }).join(','));
+            return [headers.join(','), ...rows].join('\n');
+        }
+
+        function convertToGeoJson(data) {
+            return {
+                type: 'FeatureCollection',
+                features: data.map(item => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [item.longitude, item.latitude] // GeoJSON은 [경도, 위도]
+                    },
+                    properties: {
+                        id: item.id,
+                        note: item.note,
+                        photoName: item.photoName,
+                        timestamp: item.timestamp
+                    }
+                }))
+            };
+        }
+
+        function parseCsv(csvString) {
+            const lines = csvString.trim().split('\n');
+            if (lines.length < 2) return [];
+
+            const headers = lines[0].split(',').map(h => h.trim());
+            const parsedData = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"')); // 콤마, 따옴표 처리
+                const item = {};
+                headers.forEach((header, index) => {
+                    if (header === 'latitude' || header === 'longitude') {
+                        item[header] = parseFloat(values[index]);
+                    } else if (header === 'id') {
+                        item[header] = parseInt(values[index], 10);
+                    }
+                    else {
+                        item[header] = values[index];
+                    }
+                });
+                // Base64 사진 데이터는 CSV로 내보내지 않으므로, 가져올 때도 포함하지 않음
+                item.photoBase64 = null; 
+                parsedData.push(item);
+            }
+            return parsedData;
+        }
+
+        function parseGeoJson(geojsonObject) {
+            if (geojsonObject.type !== 'FeatureCollection' || !Array.isArray(geojsonObject.features)) {
+                console.error('올바른 GeoJSON FeatureCollection 형식이 아닙니다.');
+                return [];
+            }
+            return geojsonObject.features.map(feature => ({
+                id: feature.properties.id || Date.now() + Math.random(), // ID가 없으면 새로 생성
+                latitude: feature.geometry.coordinates[1], // GeoJSON은 [경도, 위도]이므로 1번 인덱스
+                longitude: feature.geometry.coordinates[0],
+                note: feature.properties.note || '',
+                photoName: feature.properties.photoName || null,
+                photoBase64: null, // GeoJSON에는 Base64 사진 데이터가 없다고 가정
+                timestamp: feature.properties.timestamp || new Date().toLocaleString()
+            }));
+        }
+
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+// --- 사진 파일 Base64 변환 함수 ---
+        function convertFileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 페이지 로드 시 기존 마커 렌더링 (초기 로딩 시 한번만 호출되도록)
+        // map.on('locationfound' 또는 'locationerror' 이벤트 핸들러에서 호출하므로
+        // 별도의 window.addEventListener('load')는 필요 없습니다.
+        // renderExistingSurveyPoints(); // 이미 위에서 호출됨
+    </script>
+</body>
+</html>
